@@ -1,394 +1,448 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
-  useDroppable,
-  useDraggable,
 } from '@dnd-kit/core'
 import useGameStore from '../../store/gameStore'
 
-/**
- * Puzzle 2: Power System — Hold and Wait
- *
- * Mechanic: Kanban-style drag-and-drop board.
- * - Players drag 4 power components into the correct sequence slots (1→2→3→4).
- * - Each player has a personal "holding area" (max 1 item).
- * - A player cannot pick up a new component if their holding area is occupied.
- * - Dropping an item on an invalid slot snaps it back.
- * - Win: all 4 sequence slots filled with the correct components in order.
- *
- * OS Concept — Hold and Wait: A process holds a resource while waiting for
- * another. Players must NOT hold onto components indefinitely — release them
- * into the sequence or back to the pool.
- */
+const COMPONENTS = {
+  cap: { id: 'cap', label: 'Capacitor', icon: '🔋', slot: 1 },
+  reg: { id: 'reg', label: 'Regulator', icon: '⚙️', slot: 2 },
+  inv: { id: 'inv', label: 'Inverter', icon: '🔌', slot: 3 },
+  fus: { id: 'fus', label: 'Fuse Array', icon: '💡', slot: 4 },
+}
 
-// The 4 power components and their required sequence order
-const COMPONENTS = [
-  { id: 'cap', label: 'Capacitor', icon: '🔋', slot: 1 },
-  { id: 'reg', label: 'Regulator', icon: '⚙️', slot: 2 },
-  { id: 'inv', label: 'Inverter', icon: '🔌', slot: 3 },
-  { id: 'fus', label: 'Fuse Array', icon: '💡', slot: 4 },
-]
+const ORDER = ['cap', 'reg', 'inv', 'fus']
+const MAX_RAM = 2
 
-// Colour scheme per player holding area
-const HOLDER_COLORS = [
-  'border-cyan-600 bg-cyan-950/30 text-cyan-400',
-  'border-purple-600 bg-purple-950/30 text-purple-400',
-  'border-yellow-600 bg-yellow-950/30 text-yellow-400',
-  'border-orange-600 bg-orange-950/30 text-orange-400',
-  'border-pink-600 bg-pink-950/30 text-pink-400',
-]
-
-// ─── Sub-components ──────────────────────────────────────────────────────────
-
-function ComponentCard({ comp, isDragging = false }) {
+function ComponentCard({ comp, isDragging = false, dimmed = false }) {
   return (
     <div
-      className={`
-        flex items-center gap-2 px-3 py-2 rounded border
-        border-green-600 bg-green-950/40 text-green-300
-        cursor-grab active:cursor-grabbing select-none
-        ${isDragging ? 'opacity-50' : 'hover:bg-green-900/50'}
-      `}
+      className={[
+        'rounded-lg border border-green-700 bg-green-950/40 px-3 py-2 text-green-300 shadow-md select-none transition-all',
+        isDragging ? 'scale-105 shadow-green-500/40' : '',
+        dimmed ? 'opacity-45' : 'opacity-100',
+      ].join(' ')}
     >
-      <span className="text-xl">{comp.icon}</span>
-      <div>
-        <div className="text-sm font-bold">{comp.label}</div>
-        <div className="text-xs text-green-600">Seq #{comp.slot}</div>
+      <div className="flex items-center gap-3">
+        <span className="text-xl">{comp.icon}</span>
+        <div>
+          <p className="text-sm font-bold">{comp.label}</p>
+          <p className="text-[11px] tracking-widest text-green-600">SEQ #{comp.slot}</p>
+        </div>
       </div>
     </div>
   )
 }
 
-function DraggableCard({ comp, disabled }) {
+function DraggableCard({ compId, disabled = false, dimmed = false, className = '', style }) {
+  const comp = COMPONENTS[compId]
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: comp.id,
+    id: compId,
     disabled,
   })
+
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={disabled ? 'opacity-40 cursor-not-allowed' : ''}
-      title={disabled ? 'Pick up the item in your holding area first' : undefined}
+      style={style}
+      title={disabled ? 'Only top card can be moved from this stack' : undefined}
+      className={[className, disabled ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing'].join(' ')}
     >
-      <ComponentCard comp={comp} isDragging={isDragging} />
+      <ComponentCard comp={comp} isDragging={isDragging} dimmed={dimmed || disabled} />
     </div>
   )
 }
 
-function DroppableZone({ id, label, children, isCorrect, isOccupied }) {
-  const { setNodeRef, isOver } = useDroppable({ id })
+function DroppableZone({
+  id,
+  title,
+  subtitle,
+  children,
+  className = '',
+  titleClassName = 'text-xs',
+  subtitleClassName = 'text-[11px]',
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id })
+
   return (
     <div
       ref={setNodeRef}
-      className={`
-        min-h-[70px] rounded-lg border-2 p-3 transition-colors
-        ${isOver ? 'border-yellow-400 bg-yellow-950/20' : isOccupied
-          ? (isCorrect ? 'border-green-500 bg-green-950/20' : 'border-red-600 bg-red-950/20')
-          : 'border-gray-700 bg-gray-900/50'}
-      `}
+      className={[
+        'rounded-xl border-2 border-gray-700 bg-gray-900/50 p-3 transition-colors',
+        isOver ? 'border-yellow-400 bg-yellow-950/20' : '',
+        className,
+      ].join(' ')}
     >
-      <div className="text-xs text-gray-500 mb-1 tracking-widest">{label}</div>
+      <div className="mb-2">
+        <p className={`${titleClassName} tracking-widest text-gray-500`}>{title}</p>
+        {subtitle ? <p className={`${subtitleClassName} text-gray-600`}>{subtitle}</p> : null}
+      </div>
       {children}
     </div>
   )
 }
 
-// ─── Main Puzzle ─────────────────────────────────────────────────────────────
+function NodeStack({ title, zoneId, stack }) {
+  return (
+    <DroppableZone
+      id={zoneId}
+      title={title}
+      subtitle="LIFO stack: only top item draggable"
+      className="min-h-[210px]"
+    >
+      {stack.length === 0 ? (
+        <p className="pt-12 text-center text-xs italic text-gray-600">Node empty</p>
+      ) : (
+        <div className="relative flex min-h-[155px] items-end justify-center pb-2">
+          <div className="w-full max-w-[250px]">
+            {stack.map((id, idx) => {
+              const isTop = idx === stack.length - 1
+              return (
+                <DraggableCard
+                  key={id}
+                  compId={id}
+                  disabled={!isTop}
+                  dimmed={!isTop}
+                  className={['relative', idx > 0 ? '-mt-10' : ''].join(' ')}
+                  style={{ zIndex: idx + 1 }}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </DroppableZone>
+  )
+}
 
 export default function PowerPuzzle() {
   const setCurrentView = useGameStore((s) => s.setCurrentView)
   const systems = useGameStore((s) => s.systems)
   const unlockSystem = useGameStore((s) => s.unlockSystem)
 
-  // Pool: components not yet placed anywhere
-  const [pool, setPool] = useState(COMPONENTS.map((c) => c.id))
-
-  // Sequence slots: array of 4, each either null or a component id
-  const [sequence, setSequence] = useState([null, null, null, null])
-
-  // Player holding areas: array of 5, each either null or a component id
+  const [nodeAlpha, setNodeAlpha] = useState(['cap', 'fus', 'inv'])
+  const [nodeBeta, setNodeBeta] = useState(['reg'])
   const [holdings, setHoldings] = useState([null, null, null, null, null])
-
-  // Active drag id
+  const [sequence, setSequence] = useState([null, null, null, null])
   const [activeDragId, setActiveDragId] = useState(null)
-
-  // Error flash
   const [errorMsg, setErrorMsg] = useState('')
+  const [errorPulse, setErrorPulse] = useState(0)
+  const [solved, setSolved] = useState(systems.power)
 
-  const solved = systems.power
+  const clearErrorRef = useRef(null)
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  useEffect(() => {
+    return () => {
+      if (clearErrorRef.current) {
+        clearTimeout(clearErrorRef.current)
+      }
+    }
+  }, [])
+
+  const usedRam = useMemo(() => holdings.filter(Boolean).length, [holdings])
+  const ramFull = usedRam >= MAX_RAM
+
+  const integrityCount = useMemo(
+    () => sequence.filter((id, i) => id === ORDER[i]).length,
+    [sequence]
   )
 
-  function flashError(msg) {
-    setErrorMsg(msg)
-    setTimeout(() => setErrorMsg(''), 2500)
+  const flashError = (message) => {
+    setErrorMsg(message)
+    setErrorPulse((n) => n + 1)
+    if (clearErrorRef.current) {
+      clearTimeout(clearErrorRef.current)
+    }
+    clearErrorRef.current = setTimeout(() => setErrorMsg(''), 1900)
   }
 
-  /** Locate where a component currently lives */
-  function findSource(compId) {
-    if (pool.includes(compId)) return { type: 'pool' }
-    const hi = holdings.findIndex((h) => h === compId)
-    if (hi !== -1) return { type: 'holding', index: hi }
-    const si = sequence.findIndex((s) => s === compId)
-    if (si !== -1) return { type: 'sequence', index: si }
+  const isTopOfNode = (compId, node) => node.length > 0 && node[node.length - 1] === compId
+
+  const findSource = (compId) => {
+    if (nodeAlpha.includes(compId)) return { type: 'alpha' }
+    if (nodeBeta.includes(compId)) return { type: 'beta' }
+
+    const holdIndex = holdings.findIndex((id) => id === compId)
+    if (holdIndex !== -1) return { type: 'holding', index: holdIndex }
+
+    const seqIndex = sequence.findIndex((id) => id === compId)
+    if (seqIndex !== -1) return { type: 'sequence', index: seqIndex }
+
     return null
   }
 
-  /** Remove a component from wherever it currently lives */
-  function removeFromSource(compId) {
-    setPool((prev) => prev.filter((id) => id !== compId))
-    setHoldings((prev) => prev.map((h) => (h === compId ? null : h)))
-    setSequence((prev) => prev.map((s) => (s === compId ? null : s)))
+  const removeFromSource = (compId, source, state) => {
+    const next = {
+      nodeAlpha: [...state.nodeAlpha],
+      nodeBeta: [...state.nodeBeta],
+      holdings: [...state.holdings],
+      sequence: [...state.sequence],
+    }
+
+    if (source.type === 'alpha') {
+      next.nodeAlpha = next.nodeAlpha.filter((id) => id !== compId)
+    } else if (source.type === 'beta') {
+      next.nodeBeta = next.nodeBeta.filter((id) => id !== compId)
+    } else if (source.type === 'holding') {
+      next.holdings[source.index] = null
+    } else if (source.type === 'sequence') {
+      next.sequence[source.index] = null
+    }
+
+    return next
   }
 
-  function handleDragStart({ active }) {
+  const commitState = (next) => {
+    setNodeAlpha(next.nodeAlpha)
+    setNodeBeta(next.nodeBeta)
+    setHoldings(next.holdings)
+    setSequence(next.sequence)
+
+    if (next.sequence.every((id, i) => id === ORDER[i])) {
+      unlockSystem('power')
+      setSolved(true)
+    }
+  }
+
+  const handleDragStart = ({ active }) => {
     setActiveDragId(active.id)
   }
 
-  function handleDragEnd({ active, over }) {
+  const handleDragEnd = ({ active, over }) => {
     setActiveDragId(null)
-    if (!over) return // dropped outside — snap back (no state change)
+    if (!over) return
 
     const compId = active.id
-    const dest = over.id // 'pool' | 'hold-0'..'hold-4' | 'seq-0'..'seq-3'
+    const destination = String(over.id)
     const source = findSource(compId)
     if (!source) return
 
-    // ── Destination: a player holding area ────────────────────────────────
-    if (dest.startsWith('hold-')) {
-      const playerIdx = parseInt(dest.split('-')[1], 10)
+    if (source.type === 'alpha' && !isTopOfNode(compId, nodeAlpha)) return
+    if (source.type === 'beta' && !isTopOfNode(compId, nodeBeta)) return
 
-      // Holding area already occupied?
-      if (holdings[playerIdx] !== null) {
-        flashError(`Player ${playerIdx + 1}'s holding area is full — release your component first!`)
+    const current = { nodeAlpha, nodeBeta, holdings, sequence }
+
+    if (destination.startsWith('hold-')) {
+      const holdIndex = Number(destination.split('-')[1])
+      if (Number.isNaN(holdIndex) || holdIndex < 0 || holdIndex > 4) return
+
+      if (holdings[holdIndex] && holdings[holdIndex] !== compId) {
+        flashError(`Player ${holdIndex + 1}'s holding area is full!`)
         return
       }
-      removeFromSource(compId)
-      setHoldings((prev) => {
-        const next = [...prev]
-        next[playerIdx] = compId
-        return next
-      })
+
+      if ((source.type === 'alpha' || source.type === 'beta') && usedRam >= MAX_RAM) {
+        flashError('KERNEL PANIC: System RAM Full (2/2). Release held resources.')
+        return
+      }
+
+      const next = removeFromSource(compId, source, current)
+      next.holdings[holdIndex] = compId
+      commitState(next)
       return
     }
 
-    // ── Destination: a sequence slot ──────────────────────────────────────
-    if (dest.startsWith('seq-')) {
-      const slotIdx = parseInt(dest.split('-')[1], 10) // 0-based index
-      const comp = COMPONENTS.find((c) => c.id === compId)
-      const requiredSlot = comp.slot // 1-based slot number
-
-      // Slot already occupied?
-      if (sequence[slotIdx] !== null) {
-        flashError('That sequence slot is already occupied!')
-        return
+    if (destination === 'node-alpha' || destination === 'node-beta') {
+      const next = removeFromSource(compId, source, current)
+      if (destination === 'node-alpha') {
+        next.nodeAlpha.push(compId)
+      } else {
+        next.nodeBeta.push(compId)
       }
-
-      // Wrong position?
-      if (requiredSlot !== slotIdx + 1) {
-        flashError(
-          `Wrong position! ${comp.label} belongs in slot ${requiredSlot}, not slot ${slotIdx + 1}.`
-        )
-        return
-      }
-
-      removeFromSource(compId)
-      setSequence((prev) => {
-        const next = [...prev]
-        next[slotIdx] = compId
-        // Check win
-        const newSeq = [...next]
-        if (newSeq.every((id, i) => id === COMPONENTS[i].id)) {
-          unlockSystem('power')
-        }
-        return next
-      })
+      commitState(next)
       return
     }
 
-    // ── Destination: pool ─────────────────────────────────────────────────
-    if (dest === 'pool') {
-      // Only allow returning to pool if it came from a holding area or sequence
-      removeFromSource(compId)
-      setPool((prev) => (prev.includes(compId) ? prev : [...prev, compId]))
-      return
+    if (destination.startsWith('seq-')) {
+      const slotIndex = Number(destination.split('-')[1])
+      if (Number.isNaN(slotIndex) || slotIndex < 0 || slotIndex > 3) return
+
+      if (source.type !== 'holding') {
+        flashError('Dependency Error: Route through a player holding area first.')
+        return
+      }
+
+      if (sequence[slotIndex] && sequence[slotIndex] !== compId) {
+        flashError(`Slot ${slotIndex + 1} is already occupied.`)
+        return
+      }
+
+      if (slotIndex > 0 && sequence[slotIndex - 1] === null) {
+        flashError(`Dependency Error: You must fill Slot ${slotIndex} first!`)
+        return
+      }
+
+      if (ORDER[slotIndex] !== compId) {
+        flashError(`Dependency Error: ${COMPONENTS[compId].label} belongs in Slot ${COMPONENTS[compId].slot}.`)
+        return
+      }
+
+      const next = removeFromSource(compId, source, current)
+      next.sequence[slotIndex] = compId
+      commitState(next)
     }
   }
 
-  const activeComp = activeDragId ? COMPONENTS.find((c) => c.id === activeDragId) : null
+  const activeComp = activeDragId ? COMPONENTS[activeDragId] : null
 
   return (
-    <div className="min-h-screen bg-gray-950 text-green-400 font-mono flex flex-col">
-      {/* Header */}
-      <header className="border-b border-green-900 px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-950 font-mono text-green-400">
+      <header className="flex items-center justify-between border-b border-green-900 px-6 py-4">
         <div>
-          <div className="text-xs text-green-600 tracking-widest">STARSHIP SYS-7 // POWER SYSTEM</div>
-          <h2 className="text-xl font-bold text-green-300 tracking-widest">⚡ ENERGY DISTRIBUTION</h2>
+          <p className="text-xs tracking-widest text-green-600">STARSHIP SYS-7 // POWER SYSTEM</p>
+          <h2 className="text-xl font-bold tracking-widest text-green-300">SYS-7 // POWER SYSTEM</h2>
         </div>
         <button
           onClick={() => setCurrentView('hub')}
-          className="text-xs px-4 py-2 border border-green-700 text-green-500 rounded hover:bg-green-900/30 transition-colors"
+          className="rounded border border-green-700 px-4 py-2 text-xs text-green-500 transition-colors hover:bg-green-900/30"
         >
           ← BACK TO HUB
         </button>
       </header>
 
-      {/* OS concept banner */}
-      <div className="px-6 py-3 bg-blue-950/30 border-b border-blue-900/50 text-xs text-blue-300">
-        <span className="font-bold text-blue-200">OS CONCEPT — HOLD AND WAIT:</span> A process holds
-        a resource while waiting to acquire another. Avoid holding resources indefinitely — sequence
-        the components and release them into the build pipeline.
+      <div className="border-b border-blue-900/50 bg-blue-950/30 px-6 py-3 text-xs text-blue-300">
+        <span className="font-bold text-blue-200">OS CONCEPT — HOLD AND WAIT + MEMORY LIMITS:</span>{' '}
+        Processes holding resources while waiting can deadlock the system, and global RAM capacity
+        limits how many resources can be buffered at once.
       </div>
 
-      {/* Error message */}
-      {errorMsg && (
-        <div className="mx-6 mt-3 p-3 border border-red-500 bg-red-950/30 rounded text-red-300 text-sm animate-pulse">
+      <div className="mx-6 mt-4 rounded-xl border-2 border-cyan-700 bg-cyan-950/25 p-4">
+        <p className="text-xs tracking-widest text-cyan-300">SYSTEM RAM ALLOCATION</p>
+        <div className="mt-2 flex items-center justify-between text-sm">
+          <span className={ramFull ? 'text-red-300 animate-pulse font-bold' : 'text-cyan-200'}>
+            {usedRam} / {MAX_RAM} Slots Used
+          </span>
+          <span className="text-xs text-cyan-500">Global buffer cap</span>
+        </div>
+        <div className="mt-2 h-3 overflow-hidden rounded bg-gray-800">
+          <div
+            className={[
+              'h-full transition-all duration-300',
+              ramFull ? 'bg-red-500 animate-pulse' : 'bg-cyan-400',
+            ].join(' ')}
+            style={{ width: `${(usedRam / MAX_RAM) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {errorMsg ? (
+        <div
+          key={errorPulse}
+          className="mx-6 mt-3 rounded border border-red-500 bg-red-950/40 p-3 text-sm text-red-300 animate-pulse"
+        >
           ⚠ {errorMsg}
         </div>
-      )}
+      ) : null}
 
-      {/* Instructions */}
-      <div className="px-6 py-3 text-sm text-green-600">
-        <span className="text-green-400 font-bold">[MISSION]</span> Drag each power component into
-        its correct sequence slot (1→2→3→4). Use a player&apos;s holding area as a temporary buffer, but
-        each player can only hold <span className="text-yellow-400">ONE component at a time</span>.
-        Don&apos;t hold indefinitely — release into the sequence!
+      <div className="px-6 py-4 text-sm text-green-600">
+        <span className="font-bold text-green-400">[MISSION]</span> Use the two data nodes and player
+        buffers to satisfy strict dependency order without exceeding RAM capacity.
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+        <div className="grid gap-6 px-6 pb-8 lg:grid-cols-3">
+          <div className="space-y-5">
+            <NodeStack title="DATA NODE ALPHA" zoneId="node-alpha" stack={nodeAlpha} />
+            <NodeStack title="DATA NODE BETA" zoneId="node-beta" stack={nodeBeta} />
+          </div>
 
-          {/* ── Component pool ─────────────────────────────────────────────── */}
-          <div className="lg:col-span-1">
-            <h3 className="text-xs text-green-600 tracking-widest mb-3">COMPONENT POOL</h3>
-            <DroppableZone id="pool" label="Available Components" isOccupied={pool.length > 0}>
-              <div className="space-y-2">
-                {pool.length === 0 && (
-                  <p className="text-xs text-gray-600 italic py-2">All components deployed</p>
-                )}
-                {pool.map((id) => {
-                  const comp = COMPONENTS.find((c) => c.id === id)
-                  // Disable dragging from pool if a player already holds something
-                  // (no restriction — any player can pick from pool if their area is free)
-                  return <DraggableCard key={id} comp={comp} disabled={false} />
-                })}
-              </div>
-            </DroppableZone>
-
-            {/* Player holding areas */}
-            <h3 className="text-xs text-green-600 tracking-widest mt-6 mb-3">PLAYER HOLDING AREAS</h3>
-            <div className="space-y-2">
-              {holdings.map((heldId, i) => {
-                const heldComp = heldId ? COMPONENTS.find((c) => c.id === heldId) : null
-                return (
-                  <DroppableZone
-                    key={i}
-                    id={`hold-${i}`}
-                    label={`Player ${i + 1} — HOLD (max 1)`}
-                    isOccupied={!!heldComp}
-                  >
-                    {heldComp && (
-                      <DraggableCard comp={heldComp} disabled={false} />
-                    )}
-                    {!heldComp && (
-                      <p className="text-xs text-gray-700 italic">— empty —</p>
-                    )}
-                  </DroppableZone>
-                )
-              })}
+          <div>
+            <h1 className="mb-3 text-sm tracking-widest text-green-500">PLAYER HOLDING AREAS</h1>
+            <div className="space-y-3">
+              {holdings.map((id, idx) => (
+                <DroppableZone
+                  key={idx}
+                  id={`hold-${idx}`}
+                  title={`PLAYER ${idx + 1} BUFFER`}
+                  subtitle="Capacity: 1"
+                  className="min-h-[92px]"
+                  titleClassName="text-sm"
+                  subtitleClassName="text-xs"
+                >
+                  {id ? (
+                    <DraggableCard compId={id} />
+                  ) : (
+                    <p className="pt-3 text-sm italic text-gray-500">Waiting for component...</p>
+                  )}
+                </DroppableZone>
+              ))}
             </div>
           </div>
 
-          {/* ── Sequence slots ─────────────────────────────────────────────── */}
-          <div className="lg:col-span-2">
-            <h3 className="text-xs text-green-600 tracking-widest mb-3">
-              BUILD SEQUENCE — POWER CIRCUIT
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              {sequence.map((compId, i) => {
-                const comp = compId ? COMPONENTS.find((c) => c.id === compId) : null
-                const correct = comp && comp.slot === i + 1
+          <div>
+            <h3 className="mb-3 text-sm tracking-widest text-green-500">BUILD SEQUENCE</h3>
+            <div className="space-y-3">
+              {ORDER.map((requiredId, slotIndex) => {
+                const currentId = sequence[slotIndex]
+                const prevReady = slotIndex === 0 || sequence[slotIndex - 1] !== null
+
                 return (
                   <DroppableZone
-                    key={i}
-                    id={`seq-${i}`}
-                    label={`SLOT ${i + 1} — ${COMPONENTS[i].label}`}
-                    isOccupied={!!comp}
-                    isCorrect={correct}
+                    key={slotIndex}
+                    id={`seq-${slotIndex}`}
+                    title={`SLOT ${slotIndex + 1} — ${COMPONENTS[requiredId].label}`}
+                    subtitle={prevReady ? 'Dependency ready' : `Locked until Slot ${slotIndex}`}
+                    className={[
+                      'min-h-[96px]',
+                      currentId ? 'border-green-600 bg-green-950/20' : '',
+                      !prevReady && !currentId ? 'border-orange-700/50 bg-orange-950/10' : '',
+                    ].join(' ')}
+                    titleClassName="text-sm"
+                    subtitleClassName="text-xs"
                   >
-                    {comp && <DraggableCard comp={comp} disabled={correct} />}
-                    {!comp && (
-                      <p className="text-xs text-gray-700 italic">
-                        Drop {COMPONENTS[i].label} here
-                      </p>
+                    {currentId ? (
+                      <DraggableCard compId={currentId} />
+                    ) : (
+                      <p className="pt-3 text-sm italic text-gray-500">Drop {COMPONENTS[requiredId].label}</p>
                     )}
                   </DroppableZone>
                 )
               })}
             </div>
 
-            {/* Sequence progress */}
-            <div className="mt-6 p-4 rounded-lg border border-gray-800 bg-gray-900/50">
-              <div className="text-xs text-gray-500 mb-2 tracking-widest">CIRCUIT INTEGRITY</div>
-              <div className="flex gap-2">
-                {sequence.map((id, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 h-3 rounded ${
-                      id && COMPONENTS.find((c) => c.id === id)?.slot === i + 1
-                        ? 'bg-green-500'
-                        : 'bg-gray-800'
-                    }`}
-                  />
-                ))}
+            <div className="mt-5 rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+              <p className="mb-2 text-xs tracking-widest text-gray-500">CIRCUIT INTEGRITY</p>
+              <div className="h-3 overflow-hidden rounded bg-gray-800">
+                <div
+                  className="h-full bg-green-500 transition-all duration-300"
+                  style={{ width: `${(integrityCount / ORDER.length) * 100}%` }}
+                />
               </div>
-              <div className="text-xs text-gray-600 mt-1">
-                {sequence.filter((id, i) => id && COMPONENTS.find((c) => c.id === id)?.slot === i + 1).length}
-                /4 components correctly sequenced
-              </div>
+              <p className="mt-2 text-xs text-gray-500">{integrityCount}/4 components sequenced</p>
             </div>
           </div>
         </div>
 
-        {/* Drag overlay */}
-        <DragOverlay>
-          {activeComp ? <ComponentCard comp={activeComp} /> : null}
-        </DragOverlay>
+        <DragOverlay>{activeComp ? <ComponentCard comp={activeComp} isDragging /> : null}</DragOverlay>
       </DndContext>
 
-      {/* Win overlay */}
-      {solved && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="border-2 border-green-500 bg-gray-950 p-10 text-center rounded-lg max-w-md shadow-2xl shadow-green-500/20">
-            <div className="text-6xl mb-4">⚡</div>
-            <h2 className="text-3xl font-bold text-green-300 mb-2 tracking-widest">
-              POWER RESTORED
-            </h2>
-            <p className="text-green-600 mb-2 text-sm">
-              The power circuit is fully sequenced. No process is holding a resource while waiting
-              for another — the Hold and Wait condition is eliminated.
-            </p>
-            <p className="text-green-700 text-xs mb-6 italic">
-              &ldquo;Require a process to request all needed resources upfront, or release held resources
-              before requesting new ones.&rdquo;
+      {solved ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="max-w-md rounded-lg border-2 border-green-500 bg-gray-950 p-10 text-center shadow-2xl shadow-green-500/20">
+            <div className="mb-4 text-6xl">⚡</div>
+            <h2 className="mb-2 text-3xl font-bold tracking-widest text-green-300">POWER RESTORED</h2>
+            <p className="mb-2 text-sm text-green-600">
+              Dependencies resolved and RAM pressure managed. Hold-and-wait deadlock path prevented.
             </p>
             <button
               onClick={() => setCurrentView('hub')}
-              className="px-6 py-3 bg-green-900 border border-green-500 text-green-300 rounded hover:bg-green-800 transition-colors font-bold tracking-widest"
+              className="mt-4 rounded border border-green-500 bg-green-900 px-6 py-3 font-bold tracking-widest text-green-300 transition-colors hover:bg-green-800"
             >
               ← RETURN TO HUB
             </button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
