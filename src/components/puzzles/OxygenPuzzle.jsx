@@ -5,9 +5,10 @@ import useGameStore from '../../store/gameStore'
  * Puzzle 1: Oxygen System — Mutual Exclusion
  *
  * - 5 progress bars (one per player), each assigned a key: Q, P, Z, M, Space
- * - Hold your key to fill your bar (+1%/sec while held)
+ * - Hold your key to fill your bar
+ * - Unheld bars slowly drain (process starvation)
  * - If more than 1 key is pressed simultaneously → RACE CONDITION
- *   - All filling stops; bars drain at 2%/sec
+ * - All bars drain quickly
  * - Win condition: all 5 bars reach 100% simultaneously
  */
 
@@ -57,29 +58,45 @@ const COLOR_CLASSES = {
   },
 }
 
+// Adjusted rates to make the puzzle mathematically beatable
+const FILL_RATE = 18         // Fills in ~5.5 seconds
+const RACE_DRAIN_RATE = 15   // Brutal penalty for race conditions
+const PASSIVE_DRAIN_RATE = 3 // Slow decay for inactive processes
+
 export default function OxygenPuzzle() {
   const setCurrentView = useGameStore((s) => s.setCurrentView)
   const systems = useGameStore((s) => s.systems)
   const unlockSystem = useGameStore((s) => s.unlockSystem)
 
-  const [bars, setBars] = useState([0, 0, 0, 0, 0])
-  const [raceCondition, setRaceCondition] = useState(false)
   const [solved, setSolved] = useState(systems.oxygen)
+  const [pressedKeys, setPressedKeys] = useState(new Set())
+  const [completedBars, setCompletedBars] = useState([false, false, false, false, false])
 
-  // Track which keys are currently held using a ref (mutable, no re-render on change)
+  const raceCondition = pressedKeys.size > 1
+
   const activeKeys = useRef(new Set())
+  const barsRef = useRef([0, 0, 0, 0, 0])
+  const completedRef = useRef([false, false, false, false, false])
+  const barFillRefs = useRef(PLAYERS.map(() => null))
+  const barTextRefs = useRef(PLAYERS.map(() => null))
 
   const handleKeyDown = useCallback((e) => {
     const key = e.key.toLowerCase() === ' ' ? ' ' : e.key.toLowerCase()
     if (PLAYERS.some((p) => p.key === key)) {
       e.preventDefault()
       activeKeys.current.add(key)
+      setPressedKeys((prev) => new Set([...prev, key]))
     }
   }, [])
 
   const handleKeyUp = useCallback((e) => {
     const key = e.key.toLowerCase() === ' ' ? ' ' : e.key.toLowerCase()
     activeKeys.current.delete(key)
+    setPressedKeys((prev) => {
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -91,48 +108,68 @@ export default function OxygenPuzzle() {
     }
   }, [handleKeyDown, handleKeyUp])
 
-  // Game tick: runs every 100ms (10 ticks/sec) for smooth animation
-  // Each tick = 0.1 seconds → fill rate = 1%/sec → +0.1% per tick
-  //                          drain rate = 2%/sec → -0.2% per tick (race condition)
   useEffect(() => {
     if (solved) return
 
-    const interval = setInterval(() => {
+    let rafId
+    let lastTime = performance.now()
+
+    const tick = (now) => {
+      const dt = (now - lastTime) / 1000
+      lastTime = now
+
       const heldKeys = activeKeys.current
       const isRace = heldKeys.size > 1
 
-      setRaceCondition(isRace)
+      let allComplete = true
+      let completionChanged = false
 
-      setBars((prev) => {
-        const next = prev.map((val, i) => {
-          const playerKey = PLAYERS[i].key
-          if (isRace) {
-            // Race condition: all bars drain at 2%/sec → 0.2% per 100ms tick
-            return Math.max(0, val - 0.2)
-          } else if (heldKeys.has(playerKey)) {
-            // Key held: fill at 1%/sec → 0.1% per 100ms tick
-            return Math.min(100, val + 0.1)
-          }
-          // Key not held, no race: hold at current value
-          return val
-        })
+      PLAYERS.forEach((player, i) => {
+        let val = barsRef.current[i]
 
-        // Check win condition
-        if (next.every((v) => v >= 100)) {
-          setSolved(true)
-          unlockSystem('oxygen')
+        // --- THE CLEANED LOGIC ---
+        if (isRace) {
+          // Rule 1: Race Condition. Everything drains fast.
+          val = Math.max(0, val - RACE_DRAIN_RATE * dt)
+        } else if (heldKeys.has(player.key)) {
+          // Rule 2: Active & Safe. This specific bar fills.
+          val = Math.min(100, val + FILL_RATE * dt)
+        } else {
+          // Rule 3: Unheld (Starvation). Slowly drains. 
+          val = Math.max(0, val - PASSIVE_DRAIN_RATE * dt)
         }
 
-        return next
-      })
-    }, 100)
+        barsRef.current[i] = val
+        if (val < 100) allComplete = false
 
-    return () => clearInterval(interval)
+        // Direct DOM updates
+        if (barFillRefs.current[i]) barFillRefs.current[i].style.width = `${val}%`
+        if (barTextRefs.current[i]) barTextRefs.current[i].textContent = `${val.toFixed(1)}%`
+
+        const nowComplete = val >= 100
+        if (nowComplete !== completedRef.current[i]) {
+          completedRef.current[i] = nowComplete
+          completionChanged = true
+        }
+      })
+
+      if (completionChanged) setCompletedBars([...completedRef.current])
+
+      if (allComplete) {
+        setSolved(true)
+        unlockSystem('oxygen')
+        return
+      }
+
+      rafId = requestAnimationFrame(tick)
+    }
+
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
   }, [solved, unlockSystem])
 
   return (
     <div className="min-h-screen bg-gray-950 text-green-400 font-mono flex flex-col">
-      {/* Header */}
       <header className="border-b border-green-900 px-6 py-4 flex items-center justify-between">
         <div>
           <div className="text-xs text-green-600 tracking-widest">STARSHIP SYS-7 // OXYGEN SYSTEM</div>
@@ -148,13 +185,11 @@ export default function OxygenPuzzle() {
         </button>
       </header>
 
-      {/* OS Concept banner */}
       <div className="px-6 py-3 bg-blue-950/30 border-b border-blue-900/50 text-xs text-blue-300">
         <span className="font-bold text-blue-200">OS CONCEPT — MUTUAL EXCLUSION:</span> Only one
         process may access a shared resource at a time. Simultaneous access causes a race condition.
       </div>
 
-      {/* Race condition warning */}
       {raceCondition && (
         <div className="mx-6 mt-4 p-4 border-2 border-red-500 bg-red-950/40 rounded-lg animate-pulse text-center">
           <div className="text-red-300 font-bold text-lg tracking-widest">
@@ -164,29 +199,27 @@ export default function OxygenPuzzle() {
             Multiple players pressing simultaneously! Release all keys and try one at a time.
           </div>
           <div className="text-red-600 text-xs mt-1">
-            Mutual exclusion violated — oxygen bars draining at 2×
+            Mutual exclusion violated — all oxygen bars are draining at the fastest rate
           </div>
         </div>
       )}
 
-      {/* Instructions */}
       <div className="px-6 py-4 text-sm text-green-600">
         <p>
           <span className="text-green-400 font-bold">[MISSION]</span> Each player must hold their
           assigned key to replenish the oxygen supply to their station. However, the life support
           system enforces <span className="text-yellow-400">mutual exclusion</span> — only one player
           may press at a time. If two or more keys are pressed simultaneously, a race condition
-          occurs and oxygen drains faster!
+          occurs and every bar drains faster. Since unheld stations slowly lose oxygen, you must 
+          communicate to constantly rotate the active resource until all 5 reach 100%.
         </p>
       </div>
 
-      {/* Bars */}
       <div className="flex-1 px-6 py-4 space-y-5 max-w-2xl w-full mx-auto">
         {PLAYERS.map((player, i) => {
           const c = COLOR_CLASSES[player.color]
-          const pct = bars[i]
-          const isHeld = activeKeys.current.has(player.key)
-          const isComplete = pct >= 100
+          const isHeld = pressedKeys.has(player.key)
+          const isComplete = completedBars[i]
 
           return (
             <div
@@ -218,19 +251,22 @@ export default function OxygenPuzzle() {
                   {isComplete && (
                     <span className={`text-xs font-bold ${c.text}`}>✓ FULL</span>
                   )}
-                  <span className={`text-sm font-bold ${c.text}`}>
-                    {pct.toFixed(1)}%
+                  <span
+                    ref={(el) => { barTextRefs.current[i] = el }}
+                    className={`text-sm font-bold ${c.text}`}
+                  >
+                    0.0%
                   </span>
                 </div>
               </div>
 
-              {/* Progress bar track */}
               <div className="h-5 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
                 <div
-                  className={`h-full rounded-full progress-bar-fill transition-all ${
+                  ref={(el) => { barFillRefs.current[i] = el }}
+                  className={`h-full rounded-full progress-bar-fill ${
                     raceCondition ? 'bg-red-600' : c.bar
                   } ${isComplete ? 'opacity-100' : 'opacity-80'}`}
-                  style={{ width: `${pct}%` }}
+                  style={{ width: '0%', transition: 'background-color 0.2s' }}
                 />
               </div>
             </div>
@@ -238,9 +274,8 @@ export default function OxygenPuzzle() {
         })}
       </div>
 
-      {/* Win overlay */}
       {solved && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="border-2 border-green-500 bg-gray-950 p-10 text-center rounded-lg max-w-md shadow-2xl shadow-green-500/20">
             <div className="text-6xl mb-4">✅</div>
             <h2 className="text-3xl font-bold text-green-300 mb-2 tracking-widest">
@@ -251,7 +286,7 @@ export default function OxygenPuzzle() {
               contention.
             </p>
             <p className="text-green-700 text-xs mb-6 italic">
-              &ldquo;A shared resource protected by mutual exclusion prevents race conditions.&rdquo;
+              "A shared resource protected by mutual exclusion prevents race conditions."
             </p>
             <button
               onClick={() => setCurrentView('hub')}
