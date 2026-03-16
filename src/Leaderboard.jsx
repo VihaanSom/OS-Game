@@ -15,6 +15,11 @@ export default function Leaderboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+
+    if (!db) {
+      setLoading(false);
+      return;
+    }
     const leaderboardRef = ref(db, 'leaderboard');
     
     // onValue creates a live websocket connection. It updates instantly when a new team finishes.

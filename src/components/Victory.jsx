@@ -16,30 +16,6 @@ import useGameStore from '../store/gameStore'
  * gracefully and a message is shown.
  */
 
-// Read Firebase config from Vite environment variables
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-}
-
-const firebaseConfigured =
-  firebaseConfig.apiKey && firebaseConfig.databaseURL
-
-let db = null
-if (firebaseConfigured) {
-  try {
-    const app = initializeApp(firebaseConfig)
-    db = getDatabase(app)
-  } catch {
-    // Firebase init failed — leaderboard disabled
-  }
-}
-
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0')
   const s = (seconds % 60).toString().padStart(2, '0')
@@ -72,14 +48,16 @@ export default function Victory() {
     e.preventDefault()
     if (!teamName.trim()) return
 
-    if (!firebaseConfigured || !db) {
+    // If db is null (because variables are missing), stop gracefully
+    if (!db) {
       setSubmitError(
-        'Firebase is not configured. Add VITE_FIREBASE_* environment variables to enable the leaderboard.'
+        'Database connection offline. Leaderboard is disabled.'
       )
       return
     }
 
     setSubmitting(true)
+    // ... rest of submit logic
     setSubmitError('')
     try {
       await push(ref(db, 'leaderboard'), {
