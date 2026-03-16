@@ -9,7 +9,7 @@ import useGameStore from '../../store/gameStore'
  * - Unheld bars slowly drain (process starvation)
  * - If more than 1 key is pressed simultaneously → RACE CONDITION
  * - All bars drain quickly
- * - Win condition: all 5 bars reach 100% simultaneously
+ * - Win condition: all 5 bars reach the safe zone simultaneously
  */
 
 const PLAYERS = [
@@ -58,10 +58,11 @@ const COLOR_CLASSES = {
   },
 }
 
-// Adjusted rates to make the puzzle mathematically beatable
-const FILL_RATE = 18         // Fills in ~5.5 seconds
-const RACE_DRAIN_RATE = 15   // Brutal penalty for race conditions
-const PASSIVE_DRAIN_RATE = 3 // Slow decay for inactive processes
+// --- THE MIDDLE GROUND MATH ---
+const FILL_RATE = 30
+const PASSIVE_DRAIN_RATE = 2
+const RACE_DRAIN_RATE = 40
+const WIN_THRESHOLD = 90
 
 export default function OxygenPuzzle() {
   const setCurrentView = useGameStore((s) => s.setCurrentView)
@@ -127,26 +128,28 @@ export default function OxygenPuzzle() {
       PLAYERS.forEach((player, i) => {
         let val = barsRef.current[i]
 
-        // --- THE CLEANED LOGIC ---
         if (isRace) {
-          // Rule 1: Race Condition. Everything drains fast.
+          // Rule 1: RACE CONDITION! Massive penalty.
           val = Math.max(0, val - RACE_DRAIN_RATE * dt)
         } else if (heldKeys.has(player.key)) {
-          // Rule 2: Active & Safe. This specific bar fills.
+          // Rule 2: Active & Safe. Fills rapidly.
           val = Math.min(100, val + FILL_RATE * dt)
         } else {
-          // Rule 3: Unheld (Starvation). Slowly drains. 
+          // Rule 3: Unheld (Starvation). Drains very slowly.
           val = Math.max(0, val - PASSIVE_DRAIN_RATE * dt)
         }
 
         barsRef.current[i] = val
-        if (val < 100) allComplete = false
 
-        // Direct DOM updates
+        // THE FIX: Check against the Threshold, not 100
+        if (val < WIN_THRESHOLD) allComplete = false
+
+        // Direct DOM updates for butter-smooth 60fps UI
         if (barFillRefs.current[i]) barFillRefs.current[i].style.width = `${val}%`
         if (barTextRefs.current[i]) barTextRefs.current[i].textContent = `${val.toFixed(1)}%`
 
-        const nowComplete = val >= 100
+        // Update the visual glow if they are in the Safe Zone
+        const nowComplete = val >= WIN_THRESHOLD
         if (nowComplete !== completedRef.current[i]) {
           completedRef.current[i] = nowComplete
           completionChanged = true
@@ -211,7 +214,7 @@ export default function OxygenPuzzle() {
           system enforces <span className="text-yellow-400">mutual exclusion</span> — only one player
           may press at a time. If two or more keys are pressed simultaneously, a race condition
           occurs and every bar drains faster. Since unheld stations slowly lose oxygen, you must 
-          communicate to constantly rotate the active resource until all 5 reach 100%.
+          communicate to constantly rotate the active resource until all 5 cross the 90% safe zone.
         </p>
       </div>
 
@@ -248,9 +251,7 @@ export default function OxygenPuzzle() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isComplete && (
-                    <span className={`text-xs font-bold ${c.text}`}>✓ FULL</span>
-                  )}
+                  {isComplete && <span className={`text-xs font-bold ${c.text}`}>✓ SAFE</span>}
                   <span
                     ref={(el) => { barTextRefs.current[i] = el }}
                     className={`text-sm font-bold ${c.text}`}
@@ -260,10 +261,11 @@ export default function OxygenPuzzle() {
                 </div>
               </div>
 
-              <div className="h-5 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+              <div className="h-5 bg-gray-800 rounded-full overflow-hidden border border-gray-700 relative">
+                <div className="absolute top-0 bottom-0 right-[10%] w-0.5 bg-green-500/50 z-10" />
                 <div
                   ref={(el) => { barFillRefs.current[i] = el }}
-                  className={`h-full rounded-full progress-bar-fill ${
+                  className={`h-full rounded-full progress-bar-fill relative z-0 ${
                     raceCondition ? 'bg-red-600' : c.bar
                   } ${isComplete ? 'opacity-100' : 'opacity-80'}`}
                   style={{ width: '0%', transition: 'background-color 0.2s' }}
