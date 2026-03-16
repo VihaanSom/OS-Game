@@ -8,6 +8,8 @@ function formatTime(seconds) {
   return `${m}:${s}`;
 }
 
+const TOTAL_TIME_SECONDS = 1800;
+
 export default function Leaderboard() {
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,7 +91,7 @@ export default function Leaderboard() {
                         {formatTime(team.timeRemaining)}
                       </td>
                       <td className="p-4 text-right text-gray-400">
-                        {formatTime(team.timeUsed)}
+                        {formatTime(Math.max(0, TOTAL_TIME_SECONDS - team.timeRemaining))}
                       </td>
                     </tr>
                   ))
