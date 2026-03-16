@@ -46,7 +46,7 @@ function formatTime(seconds) {
   return `${m}:${s}`
 }
 
-const FIREWORKS = ['🎉', '🚀', '⭐', '✨', '🛸', '🌟', '💥', '🎊']
+const FIREWORKS = ['🎉', '🚀', '⭐', '✨', '🛸', '🌟', '💥', '🎊','👾']
 
 export default function Victory() {
   const timeRemaining = useGameStore((s) => s.timeRemaining)

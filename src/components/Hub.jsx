@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react'
-import useGameStore from '../store/gameStore'
+import React from 'react';
+import useGameStore from '../store/gameStore';
 
 /**
  * Scene 1: The Mainframe Hub
@@ -42,42 +42,38 @@ const MODULES = [
 ]
 
 function formatTime(seconds) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, '0')
   const s = (seconds % 60).toString().padStart(2, '0')
   return `${m}:${s}`
 }
 
 export default function Hub() {
   const timeRemaining = useGameStore((s) => s.timeRemaining)
-  const timerActive = useGameStore((s) => s.timerActive)
   const systems = useGameStore((s) => s.systems)
   const gameLost = useGameStore((s) => s.gameLost)
-  const startTimer = useGameStore((s) => s.startTimer)
-  const tickTimer = useGameStore((s) => s.tickTimer)
   const setCurrentView = useGameStore((s) => s.setCurrentView)
   const resetGame = useGameStore((s) => s.resetGame)
-
-  // Start timer on first mount (only if not already running and game not over)
-  useEffect(() => {
-    if (!timerActive && !gameLost) {
-      startTimer()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Tick timer every second
-  const tickRef = useRef(tickTimer)
-  tickRef.current = tickTimer
-  useEffect(() => {
-    const id = setInterval(() => tickRef.current(), 1000)
-    return () => clearInterval(id)
-  }, [])
+  const timerActive = useGameStore((s) => s.timerActive)
 
   const solvedCount = Object.values(systems).filter(Boolean).length
   const isLowTime = timeRemaining <= 300 // last 5 minutes
 
   return (
-    <div className="crt-overlay min-h-screen bg-gray-950 text-green-400 font-mono flex flex-col">
+    <div className="relative crt-overlay min-h-screen bg-gray-950 text-green-400 font-mono flex flex-col">
+      {/* Secret Reset Button for the Game Master */}
+      <button
+        onClick={() => {
+          if (window.confirm('GAME MASTER: Wipe all progress and reset timer?')) {
+            resetGame()
+          }
+        }}
+        className="absolute top-0 right-0 w-8 h-8 opacity-0 hover:opacity-100 bg-red-600 text-white font-bold text-xs z-50"
+        title="Reset Game State"
+      >
+        RST
+      </button>
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
       <header className="border-b border-green-900 px-6 py-4 flex items-center justify-between">
         <div>
@@ -130,9 +126,10 @@ export default function Hub() {
                 relative overflow-hidden rounded-lg border-2 p-6 text-left
                 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]
                 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-950
-                ${solved
-                  ? 'border-green-500 bg-green-950/40 hover:bg-green-950/60 focus:ring-green-500'
-                  : 'border-red-700 bg-red-950/20 hover:bg-red-950/30 focus:ring-red-500 animate-pulse'
+                ${
+                  solved
+                    ? 'border-green-500 bg-green-950/40 hover:bg-green-950/60 focus:ring-green-500'
+                    : 'border-red-700 bg-red-950/20 hover:bg-red-950/30 focus:ring-red-500 animate-pulse'
                 }
               `}
             >
@@ -194,11 +191,11 @@ export default function Hub() {
       )}
 
       {/* ─── Footer ─────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-green-900 px-6 py-2 text-xs text-green-800 flex justify-between">
+      <footer className="border-t border-green-900 px-6 py-3 text-center">
         <span>STARSHIP SYS-7 v2.4.1</span>
         <span>5-PLAYER CO-OP MODE // LOCAL</span>
         <span>KERNEL: DEADLOCK-OS</span>
       </footer>
     </div>
-  )
+  );
 }

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 /**
  * Global Zustand store for "Deadlock in Space"
@@ -9,62 +10,69 @@ import { create } from 'zustand'
  * - Navigation state to switch between Hub and 4 puzzle views
  * - Game win / loss state
  */
-const useGameStore = create((set, get) => ({
-  // ─── Timer ──────────────────────────────────────────────────────────────────
-  timeRemaining: 2700, // 45 minutes in seconds
-  timerActive: false,
+const useGameStore = create(
+  persist(
+    (set, get) => ({
+      // ─── Timer ──────────────────────────────────────────────────────────────────
+      timeRemaining: 1800, // 30 minutes in seconds
+      timerActive: true,
 
-  startTimer: () => set({ timerActive: true }),
-  stopTimer: () => set({ timerActive: false }),
+      startTimer: () => set({ timerActive: true }),
+      stopTimer: () => set({ timerActive: false }),
 
-  tickTimer: () => {
-    const { timeRemaining } = get()
-    if (timeRemaining <= 1) {
-      set({ timeRemaining: 0, timerActive: false, gameLost: true })
-    } else {
-      set({ timeRemaining: timeRemaining - 1 })
-    }
-  },
+      tickTimer: () => {
+        const { timeRemaining, timerActive } = get()
+        if (timerActive && timeRemaining <= 1) {
+          set({ timeRemaining: 0, timerActive: false, gameLost: true })
+        } else if (timerActive) {
+          set({ timeRemaining: timeRemaining - 1 })
+        }
+      },
 
-  // ─── System unlock status ────────────────────────────────────────────────────
-  systems: {
-    oxygen: false,
-    power: false,
-    nav: false,
-    comms: false,
-  },
+      // ─── System unlock status ────────────────────────────────────────────────────
+      systems: {
+        oxygen: false,
+        power: false,
+        nav: false,
+        comms: false,
+      },
 
-  unlockSystem: (system) => {
-    set((state) => {
-      const newSystems = { ...state.systems, [system]: true }
-      const allUnlocked = Object.values(newSystems).every(Boolean)
-      return {
-        systems: newSystems,
-        gameWon: allUnlocked,
-        timerActive: allUnlocked ? false : state.timerActive,
-      }
-    })
-  },
+      unlockSystem: (system) => {
+        set((state) => {
+          const newSystems = { ...state.systems, [system]: true }
+          const allUnlocked = Object.values(newSystems).every(Boolean)
+          return {
+            systems: newSystems,
+            gameWon: allUnlocked,
+            timerActive: allUnlocked ? false : state.timerActive,
+          }
+        })
+      },
 
-  // ─── Navigation ─────────────────────────────────────────────────────────────
-  // Possible values: 'hub' | 'oxygen' | 'power' | 'nav' | 'comms'
-  currentView: 'hub',
-  setCurrentView: (view) => set({ currentView: view }),
-
-  // ─── Victory / Defeat ────────────────────────────────────────────────────────
-  gameWon: false,
-  gameLost: false,
-
-  // ─── Reset ───────────────────────────────────────────────────────────────────
-  resetGame: () =>
-    set({
-      timeRemaining: 2700,
-      timerActive: false,
-      systems: { oxygen: false, power: false, nav: false, comms: false },
+      // ─── Navigation ─────────────────────────────────────────────────────────────
+      // Possible values: 'hub' | 'oxygen' | 'power' | 'nav' | 'comms'
       currentView: 'hub',
+      setCurrentView: (view) => set({ currentView: view }),
+
+      // ─── Victory / Defeat ────────────────────────────────────────────────────────
       gameWon: false,
       gameLost: false,
+
+      // --- NEW: CRITICAL FOR CLASSROOM USE ---
+      resetGame: () =>
+        set({
+          timeRemaining: 1800,
+          timerActive: true,
+          systems: { oxygen: false, power: false, nav: false, comms: false },
+          currentView: 'hub',
+          gameWon: false,
+          gameLost: false,
+        }),
     }),
-}))
+    {
+      name: 'deadlock-escape-storage', // The key used in browser localStorage
+    },
+  ),
+)
 
 export default useGameStore
