@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { initializeApp } from 'firebase/app'
-import { getDatabase, ref, push } from 'firebase/database'
+import { ref, push } from 'firebase/database'
 import useGameStore from '../store/gameStore'
+import { db } from '../firebase'
 
 /**
  * Victory Component
@@ -29,6 +29,7 @@ export default function Victory() {
   const resetGame = useGameStore((s) => s.resetGame)
 
   const timeUsed = 2700 - timeRemaining
+  const firebaseConfigured = Boolean(db)
 
   const [teamName, setTeamName] = useState('')
   const [submitted, setSubmitted] = useState(false)
