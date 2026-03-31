@@ -197,7 +197,7 @@ export default function Leaderboard() {
                       className="border-b border-green-900/50 hover:bg-green-900/20 transition-colors"
                     >
                       <td className="p-4 font-bold text-xl">
-                        {index === 0 ? '🥇 1' : index === 1 ? '🥈 2' : index + 1}
+                        {index === 0 ? '🥇 1' : index === 1 ? '' : index + 1}
                       </td>
                       <td className="p-4 font-bold text-lg tracking-wider text-white">
                         {team.teamName}
