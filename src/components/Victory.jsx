@@ -162,7 +162,7 @@ export default function Victory() {
                 type="text"
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
-                placeholder="e.g. Team Kernel"
+                placeholder="e.g. Team Kernel(your divisoin eg. ICT A)"
                 maxLength={50}
                 required
                 className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-green-300
