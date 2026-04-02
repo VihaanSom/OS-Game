@@ -4,40 +4,73 @@ import useGameStore from '../../store/gameStore'
 /**
  * Puzzle 3: Navigation System — No Preemption
  *
- * Mechanic:
- * - A 60-second "Automated Diagnostic" progress bar runs.
- * - When it completes, the Override Key is released and the system comes online.
- * - A tempting red "FORCE KILL PROCESS" button is on screen.
- * - If clicked, it throws a KERNEL PANIC error and resets the timer to 0.
+ * - A 75-second "Automated Diagnostic" progress bar runs.
+ * - Periodic temptation popups appear every 15s urging force-kill.
+ * - At ~40% the progress visually "stalls" for 8s, then resumes.
+ * - Fake "memory leak" warnings add psychological pressure.
+ * - A tempting red "FORCE KILL PROCESS" button is always on screen.
+ * - If clicked, it throws a KERNEL PANIC error and resets the timer.
  * - Players must learn to NOT click the button and let the process yield voluntarily.
  *
  * OS Concept — No Preemption: Resources cannot be forcibly taken from a process.
- * The process must release them voluntarily. Preempting (force-killing) causes
- * instability (kernel panic) and the process has to restart.
  */
 
-const DIAGNOSTIC_DURATION = 60 // seconds
+const DIAGNOSTIC_DURATION = 75 // seconds
+
+// Visual stall: progress freezes at ~40% for 8 seconds
+const STALL_START = Math.floor(0.4 * DIAGNOSTIC_DURATION) // ~30s
+const STALL_SECS = 8
+
+function getVisualProgress(elapsed) {
+  if (elapsed <= STALL_START) {
+    return (elapsed / DIAGNOSTIC_DURATION) * 100
+  } else if (elapsed <= STALL_START + STALL_SECS) {
+    return (STALL_START / DIAGNOSTIC_DURATION) * 100 // frozen at ~40%
+  } else {
+    const stallPct = (STALL_START / DIAGNOSTIC_DURATION) * 100
+    const frac = (elapsed - STALL_START - STALL_SECS) / (DIAGNOSTIC_DURATION - STALL_START - STALL_SECS)
+    return stallPct + frac * (100 - stallPct)
+  }
+}
+
+const TEMPTATION_MESSAGES = [
+  'CRITICAL: System unresponsive! Force kill NOW?',
+  'WARNING: Process appears frozen! Terminate immediately?',
+  'ALERT: System resources exhausted! Force restart required?',
+  'EMERGENCY: Diagnostic timeout detected! Kill process?',
+  'CRITICAL: System failing! Force kill NOW?',
+]
 
 export default function NavPuzzle() {
   const setCurrentView = useGameStore((s) => s.setCurrentView)
   const systems = useGameStore((s) => s.systems)
   const unlockSystem = useGameStore((s) => s.unlockSystem)
+  const recordIncident = useGameStore((s) => s.recordIncident)
 
-  const [elapsed, setElapsed] = useState(0)   // 0..DIAGNOSTIC_DURATION
+  const [elapsed, setElapsed] = useState(0)
   const [running, setRunning] = useState(false)
   const [panicState, setPanicState] = useState(false)
   const [panicCount, setPanicCount] = useState(0)
   const [showWarning, setShowWarning] = useState(false)
+  const [temptation, setTemptation] = useState(null)
   const solved = systems.nav
 
-  // Tick every second
+  const temptationTriggeredRef = useRef(new Set())
+  const temptationTimerRef = useRef(null)
   const elapsedRef = useRef(elapsed)
   elapsedRef.current = elapsed
 
+  // Cleanup temptation timer on unmount
+  useEffect(() => {
+    return () => {
+      if (temptationTimerRef.current) clearTimeout(temptationTimerRef.current)
+    }
+  }, [])
+
+  // Main diagnostic timer
   useEffect(() => {
     if (solved) return
 
-    // Auto-start the diagnostic
     setRunning(true)
 
     const id = setInterval(() => {
@@ -57,15 +90,32 @@ export default function NavPuzzle() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panicState, solved])
 
+  // Temptation popup system — triggers every 15 seconds
+  useEffect(() => {
+    if (solved || panicState || elapsed === 0) return
+
+    const trigger = Math.floor(elapsed / 15)
+    if (trigger > 0 && !temptationTriggeredRef.current.has(trigger)) {
+      temptationTriggeredRef.current.add(trigger)
+      const msg = TEMPTATION_MESSAGES[(trigger - 1) % TEMPTATION_MESSAGES.length]
+      setTemptation({ message: msg, id: trigger })
+      if (temptationTimerRef.current) clearTimeout(temptationTimerRef.current)
+      temptationTimerRef.current = setTimeout(() => {
+        setTemptation(null)
+      }, 6000)
+    }
+  }, [elapsed, solved, panicState])
+
   function handleForceKill() {
     if (solved) return
-    // Trigger kernel panic
     setPanicState(true)
     setPanicCount((c) => c + 1)
+    recordIncident('kernelPanics')
     setRunning(false)
     setElapsed(0)
+    setTemptation(null)
+    temptationTriggeredRef.current.clear()
 
-    // Recover after 3 seconds, restart diagnostic
     setTimeout(() => {
       setPanicState(false)
       setRunning(true)
@@ -77,7 +127,8 @@ export default function NavPuzzle() {
     setTimeout(() => setShowWarning(false), 2000)
   }
 
-  const progress = (elapsed / DIAGNOSTIC_DURATION) * 100
+  const visualProgress = getVisualProgress(elapsed)
+  const isStalling = elapsed > STALL_START && elapsed <= STALL_START + STALL_SECS
   const timeLeft = DIAGNOSTIC_DURATION - elapsed
 
   return (
@@ -126,6 +177,32 @@ export default function NavPuzzle() {
         </div>
       )}
 
+      {/* Temptation popup overlay */}
+      {temptation && !panicState && !solved && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 animate-pulse">
+          <div className="border-2 border-orange-500 bg-gray-950 p-8 text-center rounded-lg max-w-md shadow-2xl shadow-orange-500/20">
+            <div className="text-4xl mb-3">⚠️</div>
+            <h3 className="text-xl font-bold text-orange-300 mb-2 tracking-widest">SYSTEM ALERT</h3>
+            <p className="text-orange-400 text-sm mb-4">{temptation.message}</p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={handleForceKill}
+                className="px-6 py-3 bg-red-900/60 border-2 border-red-500 text-red-300 rounded-lg font-bold tracking-widest hover:bg-red-800/80 transition-colors"
+              >
+                💀 FORCE KILL
+              </button>
+              <button
+                onClick={() => setTemptation(null)}
+                className="px-6 py-3 bg-gray-800 border border-gray-600 text-gray-400 rounded-lg text-sm hover:bg-gray-700 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+            <p className="text-orange-700 text-xs mt-3 italic">This alert will auto-dismiss shortly...</p>
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 p-6 max-w-2xl mx-auto w-full">
         {/* Panic counter */}
@@ -162,28 +239,36 @@ export default function NavPuzzle() {
           <div className="h-8 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
             <div
               className={`h-full rounded-full transition-all duration-1000 ${
-                panicState ? 'bg-red-600' : 'bg-green-500'
+                panicState ? 'bg-red-600' : isStalling ? 'bg-yellow-500' : 'bg-green-500'
               }`}
-              style={{ width: `${progress}%` }}
+              style={{ width: `${visualProgress}%` }}
             />
           </div>
           <div className="flex justify-between text-xs mt-1">
-            <span className="text-green-600">{progress.toFixed(1)}% complete</span>
+            <span className={isStalling ? 'text-yellow-500 animate-pulse' : 'text-green-600'}>
+              {isStalling ? `${visualProgress.toFixed(1)}% — PROCESSING...` : `${visualProgress.toFixed(1)}% complete`}
+            </span>
             {running && !panicState && (
               <span className="text-yellow-500">~{timeLeft}s remaining</span>
             )}
           </div>
         </div>
 
-        {/* Status log */}
-        <div className="p-4 rounded-lg border border-gray-800 bg-black/40 mb-6 font-mono text-xs text-green-700 space-y-1 h-28 overflow-y-auto">
-          <div>[{String(elapsed).padStart(2, '0')}s] Diagnostic progress: {progress.toFixed(1)}%</div>
+        {/* Status log with fake warnings */}
+        <div className="p-4 rounded-lg border border-gray-800 bg-black/40 mb-6 font-mono text-xs text-green-700 space-y-1 h-36 overflow-y-auto">
+          <div>[{String(elapsed).padStart(2, '0')}s] Diagnostic progress: {visualProgress.toFixed(1)}%</div>
           {elapsed >= 10 && <div>[10s] Sector A: nav-array integrity... OK</div>}
+          {elapsed >= 18 && <div className="text-yellow-500">[18s] ⚠ WARNING: Possible memory leak detected in nav_diagnostic_process</div>}
           {elapsed >= 20 && <div>[20s] Sector B: trajectory matrix... OK</div>}
-          {elapsed >= 30 && <div>[30s] Sector C: star-map checksums... OK</div>}
-          {elapsed >= 40 && <div>[40s] Sector D: autopilot calibration... OK</div>}
-          {elapsed >= 50 && <div>[50s] Sector E: hyperspace calculations... OK</div>}
-          {elapsed >= 60 && <div>[60s] ✓ Diagnostic complete — releasing NAV_OVERRIDE_KEY</div>}
+          {elapsed >= 28 && <div className="text-yellow-500">[28s] ⚠ ALERT: Memory usage increasing — 87% utilized</div>}
+          {isStalling && <div className="text-orange-400 animate-pulse">[{STALL_START}s] ⚠ Diagnostic appears stalled... verifying sector integrity</div>}
+          {elapsed >= STALL_START + STALL_SECS && <div className="text-green-500">[{STALL_START + STALL_SECS}s] Diagnostic resumed — sector verified OK</div>}
+          {elapsed >= 40 && <div>[40s] Sector C: star-map checksums... OK</div>}
+          {elapsed >= 45 && <div className="text-orange-400">[45s] ⚠ CRITICAL: Memory at 94%! Process may not complete!</div>}
+          {elapsed >= 55 && <div>[55s] Sector D: autopilot calibration... OK</div>}
+          {elapsed >= 60 && <div className="text-yellow-500">[60s] ⚠ MEMORY LEAK DETECTED — Process may not complete!</div>}
+          {elapsed >= 65 && <div>[65s] Sector E: hyperspace calculations... OK</div>}
+          {elapsed >= DIAGNOSTIC_DURATION && <div>[{DIAGNOSTIC_DURATION}s] ✓ Diagnostic complete — releasing NAV_OVERRIDE_KEY</div>}
           {panicCount > 0 && (
             <div className="text-red-500">
               [ERR] Kernel panic #{panicCount} — force-kill attempted!
@@ -219,10 +304,10 @@ export default function NavPuzzle() {
           )}
         </div>
 
-        {/* Hint */}
+        {/* Cryptic hint — no longer gives away the answer */}
         <div className="mt-4 p-3 border border-gray-800 bg-gray-900/30 rounded text-xs text-gray-500 text-center">
-          💡 Hint: In OS design, No Preemption means you cannot forcibly take a resource from a
-          process. Just wait 60 seconds for the process to release the Override Key on its own.
+          💡 Hint: A deadlock condition states that resources cannot be forcibly reclaimed.
+          Sometimes the wisest action is inaction. What happens when a process is allowed to finish?
         </div>
       </div>
 

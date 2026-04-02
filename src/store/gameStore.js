@@ -14,7 +14,7 @@ const useGameStore = create(
   persist(
     (set, get) => ({
       // ─── Timer ──────────────────────────────────────────────────────────────────
-      timeRemaining: 1800, // 30 minutes in seconds
+      timeRemaining: 1320, // 22 minutes in seconds
       timerActive: true,
 
       startTimer: () => set({ timerActive: true }),
@@ -49,6 +49,20 @@ const useGameStore = create(
         })
       },
 
+      // ─── System Integrity ─────────────────────────────────────────────────────
+      integrity: {
+        raceConditions: 0,
+        kernelPanics: 0,
+      },
+
+      recordIncident: (type) =>
+        set((state) => ({
+          integrity: {
+            ...state.integrity,
+            [type]: (state.integrity[type] || 0) + 1,
+          },
+        })),
+
       // ─── Navigation ─────────────────────────────────────────────────────────────
       // Possible values: 'hub' | 'oxygen' | 'power' | 'nav' | 'comms'
       currentView: 'hub',
@@ -61,12 +75,13 @@ const useGameStore = create(
       // --- NEW: CRITICAL FOR CLASSROOM USE ---
       resetGame: () =>
         set({
-          timeRemaining: 1800,
+          timeRemaining: 1320,
           timerActive: true,
           systems: { oxygen: false, power: false, nav: false, comms: false },
           currentView: 'hub',
           gameWon: false,
           gameLost: false,
+          integrity: { raceConditions: 0, kernelPanics: 0 },
         }),
     }),
     {

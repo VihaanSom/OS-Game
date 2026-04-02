@@ -60,6 +60,14 @@ export default function Hub() {
   const solvedCount = Object.values(systems).filter(Boolean).length
   const isLowTime = timeRemaining <= 300 // last 5 minutes
 
+  // Sequential unlock: each puzzle requires the previous one to be solved
+  const UNLOCK_ORDER = ['oxygen', 'power', 'nav', 'comms']
+  const isLocked = (id) => {
+    const idx = UNLOCK_ORDER.indexOf(id)
+    if (idx <= 0) return false
+    return !systems[UNLOCK_ORDER[idx - 1]]
+  }
+
   return (
     <div className="relative crt-overlay min-h-screen bg-gray-950 text-green-400 font-mono flex flex-col">
       {/* Secret Reset Button for the Game Master */}
@@ -118,18 +126,22 @@ export default function Hub() {
       <main className="flex-1 p-6 grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl mx-auto w-full">
         {MODULES.map(({ id, label, icon, description, sublabel }) => {
           const solved = systems[id]
+          const locked = isLocked(id)
           return (
             <button
               key={id}
-              onClick={() => setCurrentView(id)}
+              onClick={() => !locked && setCurrentView(id)}
+              disabled={locked}
               className={`
                 relative overflow-hidden rounded-lg border-2 p-6 text-left
-                transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]
+                transition-all duration-300
                 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-950
                 ${
                   solved
-                    ? 'border-green-500 bg-green-950/40 hover:bg-green-950/60 focus:ring-green-500'
-                    : 'border-red-700 bg-red-950/20 hover:bg-red-950/30 focus:ring-red-500 animate-pulse'
+                    ? 'border-green-500 bg-green-950/40 hover:bg-green-950/60 focus:ring-green-500 hover:scale-[1.02] active:scale-[0.98]'
+                    : locked
+                    ? 'border-gray-700 bg-gray-900/30 cursor-not-allowed opacity-60'
+                    : 'border-red-700 bg-red-950/20 hover:bg-red-950/30 focus:ring-red-500 animate-pulse hover:scale-[1.02] active:scale-[0.98]'
                 }
               `}
             >
@@ -163,6 +175,11 @@ export default function Hub() {
                 {solved && (
                   <div className="mt-3 text-xs text-green-400 font-bold">
                     ✓ SYSTEM RESTORED
+                  </div>
+                )}
+                {locked && (
+                  <div className="mt-3 text-xs text-gray-500 font-bold">
+                    🔒 LOCKED — Complete {UNLOCK_ORDER[UNLOCK_ORDER.indexOf(id) - 1].toUpperCase()} first
                   </div>
                 )}
               </div>

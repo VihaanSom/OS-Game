@@ -11,14 +11,16 @@ import {
 import useGameStore from '../../store/gameStore'
 
 const COMPONENTS = {
-  cap: { id: 'cap', label: 'Capacitor', icon: '🔋', slot: 1 },
-  reg: { id: 'reg', label: 'Regulator', icon: '⚙️', slot: 2 },
-  inv: { id: 'inv', label: 'Inverter', icon: '🔌', slot: 3 },
-  fus: { id: 'fus', label: 'Fuse Array', icon: '💡', slot: 4 },
+  cap: { id: 'cap', label: 'Capacitor', icon: '🔋' },
+  reg: { id: 'reg', label: 'Regulator', icon: '⚙️' },
+  inv: { id: 'inv', label: 'Inverter', icon: '🔌' },
+  fus: { id: 'fus', label: 'Fuse Array', icon: '💡' },
+  diode: { id: 'diode', label: 'Diode Matrix', icon: '🔲', decoy: true },
+  relay: { id: 'relay', label: 'Relay Switch', icon: '🔀', decoy: true },
 }
 
 const ORDER = ['cap', 'reg', 'inv', 'fus']
-const MAX_RAM = 2
+const MAX_RAM = 1
 
 function ComponentCard({ comp, isDragging = false, dimmed = false }) {
   return (
@@ -27,13 +29,14 @@ function ComponentCard({ comp, isDragging = false, dimmed = false }) {
         'rounded-lg border border-green-700 bg-green-950/40 px-3 py-2 text-green-300 shadow-md select-none transition-all',
         isDragging ? 'scale-105 shadow-green-500/40' : '',
         dimmed ? 'opacity-45' : 'opacity-100',
+        comp.decoy ? 'border-yellow-700/50' : '',
       ].join(' ')}
     >
       <div className="flex items-center gap-3">
         <span className="text-xl">{comp.icon}</span>
         <div>
           <p className="text-sm font-bold">{comp.label}</p>
-          <p className="text-[11px] tracking-widest text-green-600">SEQ #{comp.slot}</p>
+          <p className="text-[11px] tracking-widest text-green-600">COMPONENT</p>
         </div>
       </div>
     </div>
@@ -127,9 +130,11 @@ export default function PowerPuzzle() {
   const setCurrentView = useGameStore((s) => s.setCurrentView)
   const systems = useGameStore((s) => s.systems)
   const unlockSystem = useGameStore((s) => s.unlockSystem)
+  const recordIncident = useGameStore((s) => s.recordIncident)
 
-  const [nodeAlpha, setNodeAlpha] = useState(['cap', 'fus', 'inv'])
-  const [nodeBeta, setNodeBeta] = useState(['reg'])
+  const [nodeAlpha, setNodeAlpha] = useState(['cap', 'relay', 'inv'])
+  const [nodeBeta, setNodeBeta] = useState(['reg', 'diode'])
+  const [nodeGamma, setNodeGamma] = useState(['fus'])
   const [holdings, setHoldings] = useState([null, null, null, null, null])
   const [sequence, setSequence] = useState([null, null, null, null])
   const [activeDragId, setActiveDragId] = useState(null)
@@ -171,6 +176,7 @@ export default function PowerPuzzle() {
   const findSource = (compId) => {
     if (nodeAlpha.includes(compId)) return { type: 'alpha' }
     if (nodeBeta.includes(compId)) return { type: 'beta' }
+    if (nodeGamma.includes(compId)) return { type: 'gamma' }
 
     const holdIndex = holdings.findIndex((id) => id === compId)
     if (holdIndex !== -1) return { type: 'holding', index: holdIndex }
@@ -185,6 +191,7 @@ export default function PowerPuzzle() {
     const next = {
       nodeAlpha: [...state.nodeAlpha],
       nodeBeta: [...state.nodeBeta],
+      nodeGamma: [...state.nodeGamma],
       holdings: [...state.holdings],
       sequence: [...state.sequence],
     }
@@ -193,6 +200,8 @@ export default function PowerPuzzle() {
       next.nodeAlpha = next.nodeAlpha.filter((id) => id !== compId)
     } else if (source.type === 'beta') {
       next.nodeBeta = next.nodeBeta.filter((id) => id !== compId)
+    } else if (source.type === 'gamma') {
+      next.nodeGamma = next.nodeGamma.filter((id) => id !== compId)
     } else if (source.type === 'holding') {
       next.holdings[source.index] = null
     } else if (source.type === 'sequence') {
@@ -205,6 +214,7 @@ export default function PowerPuzzle() {
   const commitState = (next) => {
     setNodeAlpha(next.nodeAlpha)
     setNodeBeta(next.nodeBeta)
+    setNodeGamma(next.nodeGamma)
     setHoldings(next.holdings)
     setSequence(next.sequence)
 
@@ -229,8 +239,9 @@ export default function PowerPuzzle() {
 
     if (source.type === 'alpha' && !isTopOfNode(compId, nodeAlpha)) return
     if (source.type === 'beta' && !isTopOfNode(compId, nodeBeta)) return
+    if (source.type === 'gamma' && !isTopOfNode(compId, nodeGamma)) return
 
-    const current = { nodeAlpha, nodeBeta, holdings, sequence }
+    const current = { nodeAlpha, nodeBeta, nodeGamma, holdings, sequence }
 
     if (destination.startsWith('hold-')) {
       const holdIndex = Number(destination.split('-')[1])
@@ -241,8 +252,9 @@ export default function PowerPuzzle() {
         return
       }
 
-      if ((source.type === 'alpha' || source.type === 'beta') && usedRam >= MAX_RAM) {
-        flashError('KERNEL PANIC: System RAM Full (2/2). Release held resources.')
+      if ((source.type === 'alpha' || source.type === 'beta' || source.type === 'gamma') && usedRam >= MAX_RAM) {
+        flashError('KERNEL PANIC: System RAM Full. Release held resources.')
+        recordIncident('kernelPanics')
         return
       }
 
@@ -252,12 +264,14 @@ export default function PowerPuzzle() {
       return
     }
 
-    if (destination === 'node-alpha' || destination === 'node-beta') {
+    if (destination === 'node-alpha' || destination === 'node-beta' || destination === 'node-gamma') {
       const next = removeFromSource(compId, source, current)
       if (destination === 'node-alpha') {
         next.nodeAlpha.push(compId)
-      } else {
+      } else if (destination === 'node-beta') {
         next.nodeBeta.push(compId)
+      } else {
+        next.nodeGamma.push(compId)
       }
       commitState(next)
       return
@@ -282,8 +296,14 @@ export default function PowerPuzzle() {
         return
       }
 
+      if (COMPONENTS[compId].decoy) {
+        flashError('HARDWARE FAULT: Incompatible component rejected by the power bus.')
+        recordIncident('kernelPanics')
+        return
+      }
+
       if (ORDER[slotIndex] !== compId) {
-        flashError(`Dependency Error: ${COMPONENTS[compId].label} belongs in Slot ${COMPONENTS[compId].slot}.`)
+        flashError('DEPENDENCY MISMATCH: This component does not satisfy the slot requirements.')
         return
       }
 
@@ -345,15 +365,17 @@ export default function PowerPuzzle() {
       ) : null}
 
       <div className="px-6 py-4 text-sm text-green-600">
-        <span className="font-bold text-green-400">[MISSION]</span> Use the two data nodes and player
-        buffers to satisfy strict dependency order without exceeding RAM capacity.
+        <span className="font-bold text-green-400">[MISSION]</span> Use the three data nodes and player
+        buffers to satisfy strict dependency order without exceeding RAM capacity. Beware — not all
+        components are genuine. Decoys will cause system faults if installed.
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="grid gap-6 px-6 pb-8 lg:grid-cols-3">
-          <div className="space-y-5">
+          <div className="space-y-4">
             <NodeStack title="DATA NODE ALPHA" zoneId="node-alpha" stack={nodeAlpha} />
             <NodeStack title="DATA NODE BETA" zoneId="node-beta" stack={nodeBeta} />
+            <NodeStack title="DATA NODE GAMMA" zoneId="node-gamma" stack={nodeGamma} />
           </div>
 
           <div>
@@ -390,7 +412,7 @@ export default function PowerPuzzle() {
                   <DroppableZone
                     key={slotIndex}
                     id={`seq-${slotIndex}`}
-                    title={`SLOT ${slotIndex + 1} — ${COMPONENTS[requiredId].label}`}
+                    title={`SLOT ${slotIndex + 1} — ???`}
                     subtitle={prevReady ? 'Dependency ready' : `Locked until Slot ${slotIndex}`}
                     className={[
                       'min-h-[96px]',
@@ -403,7 +425,7 @@ export default function PowerPuzzle() {
                     {currentId ? (
                       <DraggableCard compId={currentId} />
                     ) : (
-                      <p className="pt-3 text-sm italic text-gray-500">Drop {COMPONENTS[requiredId].label}</p>
+                      <p className="pt-3 text-sm italic text-gray-500">Awaiting component...</p>
                     )}
                   </DroppableZone>
                 )

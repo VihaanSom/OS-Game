@@ -27,8 +27,9 @@ const FIREWORKS = ['🎉', '🚀', '⭐', '✨', '🛸', '🌟', '💥', '🎊',
 export default function Victory() {
   const timeRemaining = useGameStore((s) => s.timeRemaining)
   const resetGame = useGameStore((s) => s.resetGame)
+  const integrity = useGameStore((s) => s.integrity)
 
-  const timeUsed = 2700 - timeRemaining
+  const timeUsed = 1320 - timeRemaining
   const firebaseConfigured = Boolean(db)
 
   const [teamName, setTeamName] = useState('')
@@ -65,6 +66,8 @@ export default function Victory() {
         teamName: teamName.trim(),
         timeUsed,
         timeRemaining,
+        raceConditions: integrity.raceConditions,
+        kernelPanics: integrity.kernelPanics,
         completedAt: new Date().toISOString(),
       })
       setSubmitted(true)
@@ -106,9 +109,21 @@ export default function Victory() {
             <span className="text-green-600">Systems Restored</span>
             <span className="text-green-300 font-bold">4/4</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between border-b border-green-900 pb-2">
             <span className="text-green-600">Deadlock Conditions Eliminated</span>
             <span className="text-green-300 font-bold">4/4</span>
+          </div>
+          <div className="flex justify-between border-b border-green-900 pb-2">
+            <span className="text-green-600">Race Conditions</span>
+            <span className={`font-bold ${integrity.raceConditions > 0 ? 'text-red-400' : 'text-green-300'}`}>
+              {integrity.raceConditions}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-green-600">Kernel Panics</span>
+            <span className={`font-bold ${integrity.kernelPanics > 0 ? 'text-red-400' : 'text-green-300'}`}>
+              {integrity.kernelPanics}
+            </span>
           </div>
         </div>
 

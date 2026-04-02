@@ -59,19 +59,26 @@ const COLOR_CLASSES = {
 }
 
 // --- THE MIDDLE GROUND MATH ---
-const FILL_RATE = 30
-const PASSIVE_DRAIN_RATE = 2
-const RACE_DRAIN_RATE = 40
-const WIN_THRESHOLD = 90
+const FILL_RATE = 24
+const PASSIVE_DRAIN_RATE = 4
+const RACE_DRAIN_RATE = 60
+const WIN_THRESHOLD = 95
+
+// Priority Inversion: a random unheld bar gets extra drain periodically
+const PI_INTERVAL = 10000    // ms between inversion events
+const PI_DURATION = 3000     // ms each inversion lasts
+const PI_DRAIN_RATE = 8      // drain/s during inversion
 
 export default function OxygenPuzzle() {
   const setCurrentView = useGameStore((s) => s.setCurrentView)
   const systems = useGameStore((s) => s.systems)
   const unlockSystem = useGameStore((s) => s.unlockSystem)
+  const recordIncident = useGameStore((s) => s.recordIncident)
 
   const [solved, setSolved] = useState(systems.oxygen)
   const [pressedKeys, setPressedKeys] = useState(new Set())
   const [completedBars, setCompletedBars] = useState([false, false, false, false, false])
+  const [priorityTarget, setPriorityTarget] = useState(-1)
 
   const raceCondition = pressedKeys.size > 1
 
@@ -80,6 +87,10 @@ export default function OxygenPuzzle() {
   const completedRef = useRef([false, false, false, false, false])
   const barFillRefs = useRef(PLAYERS.map(() => null))
   const barTextRefs = useRef(PLAYERS.map(() => null))
+  const wasRacingRef = useRef(false)
+  const recordIncidentRef = useRef(recordIncident)
+  recordIncidentRef.current = recordIncident
+  const priorityRef = useRef({ target: -1, startTime: 0, nextTrigger: performance.now() + PI_INTERVAL })
 
   const handleKeyDown = useCallback((e) => {
     const key = e.key.toLowerCase() === ' ' ? ' ' : e.key.toLowerCase()
@@ -122,6 +133,29 @@ export default function OxygenPuzzle() {
       const heldKeys = activeKeys.current
       const isRace = heldKeys.size > 1
 
+      // Track race condition incidents
+      if (isRace && !wasRacingRef.current) {
+        recordIncidentRef.current('raceConditions')
+      }
+      wasRacingRef.current = isRace
+
+      // Priority Inversion — periodically drains a random unheld bar
+      const pi = priorityRef.current
+      if (pi.target === -1 && now >= pi.nextTrigger) {
+        const unheld = PLAYERS
+          .map((_, idx) => idx)
+          .filter(idx => !heldKeys.has(PLAYERS[idx].key) && barsRef.current[idx] > 15)
+        if (unheld.length > 0) {
+          pi.target = unheld[Math.floor(Math.random() * unheld.length)]
+          pi.startTime = now
+          setPriorityTarget(pi.target)
+        }
+      } else if (pi.target !== -1 && now - pi.startTime >= PI_DURATION) {
+        pi.target = -1
+        pi.nextTrigger = now + PI_INTERVAL
+        setPriorityTarget(-1)
+      }
+
       let allComplete = true
       let completionChanged = false
 
@@ -135,8 +169,13 @@ export default function OxygenPuzzle() {
           // Rule 2: Active & Safe. Fills rapidly.
           val = Math.min(100, val + FILL_RATE * dt)
         } else {
-          // Rule 3: Unheld (Starvation). Drains very slowly.
+          // Rule 3: Unheld (Starvation). Drains slowly.
           val = Math.max(0, val - PASSIVE_DRAIN_RATE * dt)
+        }
+
+        // Priority Inversion: extra drain on the targeted bar
+        if (priorityRef.current.target === i) {
+          val = Math.max(0, val - PI_DRAIN_RATE * dt)
         }
 
         barsRef.current[i] = val
@@ -214,7 +253,7 @@ export default function OxygenPuzzle() {
           system enforces <span className="text-yellow-400">mutual exclusion</span> — only one player
           may press at a time. If two or more keys are pressed simultaneously, a race condition
           occurs and every bar drains faster. Since unheld stations slowly lose oxygen, you must 
-          communicate to constantly rotate the active resource until all 5 cross the 90% safe zone.
+          communicate to constantly rotate the active resource until all 5 cross the 95% safe zone.
         </p>
       </div>
 
@@ -249,6 +288,9 @@ export default function OxygenPuzzle() {
                   {isHeld && raceCondition && (
                     <span className="text-xs text-red-400 animate-pulse">✗ RACE!</span>
                   )}
+                  {!isHeld && priorityTarget === i && (
+                    <span className="text-xs text-orange-400 animate-pulse">⚡ PRIORITY INVERSION</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {isComplete && <span className={`text-xs font-bold ${c.text}`}>✓ SAFE</span>}
@@ -262,7 +304,7 @@ export default function OxygenPuzzle() {
               </div>
 
               <div className="h-5 bg-gray-800 rounded-full overflow-hidden border border-gray-700 relative">
-                <div className="absolute top-0 bottom-0 right-[10%] w-0.5 bg-green-500/50 z-10" />
+                <div className="absolute top-0 bottom-0 right-[5%] w-0.5 bg-green-500/50 z-10" />
                 <div
                   ref={(el) => { barFillRefs.current[i] = el }}
                   className={`h-full rounded-full progress-bar-fill relative z-0 ${
