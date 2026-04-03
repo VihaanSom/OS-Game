@@ -62,7 +62,7 @@ const COLOR_CLASSES = {
 const FILL_RATE = 24
 const PASSIVE_DRAIN_RATE = 4
 const RACE_DRAIN_RATE = 60
-const WIN_THRESHOLD = 95
+const WIN_THRESHOLD = 85
 
 // Priority Inversion: a random unheld bar gets extra drain periodically
 const PI_INTERVAL = 10000    // ms between inversion events
@@ -252,7 +252,7 @@ export default function OxygenPuzzle() {
           assigned key to replenish the oxygen supply to their station. However, the life support
           system enforces <span className="text-yellow-400">mutual exclusion</span> — only one player
           may press at a time. If two or more keys are pressed simultaneously, a race condition
-          occurs and every bar drains faster. Since unheld stations slowly lose oxygen, you must 
+          occurs and every bar drains faster. Since unheld stations slowly lose oxygen, you must
           communicate to constantly rotate the active resource until all 5 cross the 95% safe zone.
         </p>
       </div>
@@ -266,9 +266,8 @@ export default function OxygenPuzzle() {
           return (
             <div
               key={player.id}
-              className={`p-4 rounded-lg border ${c.border} bg-gray-900 ${
-                isComplete ? `shadow-lg ${c.glow}` : ''
-              }`}
+              className={`p-4 rounded-lg border ${c.border} bg-gray-900 ${isComplete ? `shadow-lg ${c.glow}` : ''
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
@@ -307,9 +306,8 @@ export default function OxygenPuzzle() {
                 <div className="absolute top-0 bottom-0 right-[5%] w-0.5 bg-green-500/50 z-10" />
                 <div
                   ref={(el) => { barFillRefs.current[i] = el }}
-                  className={`h-full rounded-full progress-bar-fill relative z-0 ${
-                    raceCondition ? 'bg-red-600' : c.bar
-                  } ${isComplete ? 'opacity-100' : 'opacity-80'}`}
+                  className={`h-full rounded-full progress-bar-fill relative z-0 ${raceCondition ? 'bg-red-600' : c.bar
+                    } ${isComplete ? 'opacity-100' : 'opacity-80'}`}
                   style={{ width: '0%', transition: 'background-color 0.2s' }}
                 />
               </div>
