@@ -66,7 +66,7 @@ function getUniqueClasses(teams) {
   return divisionOrder.filter(div => classSet.has(div));
 }
 
-const TOTAL_TIME_SECONDS = 1800;
+const TOTAL_TIME_SECONDS = 1320;
 
 export default function Leaderboard() {
   const [teams, setTeams] = useState([]);
