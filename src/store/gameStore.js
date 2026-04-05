@@ -14,7 +14,7 @@ const useGameStore = create(
   persist(
     (set, get) => ({
       // ─── Timer ──────────────────────────────────────────────────────────────────
-      timeRemaining: 1320, // 22 minutes in seconds
+      timeRemaining: 1800, // 30 minutes in seconds
       timerActive: true,
 
       startTimer: () => set({ timerActive: true }),
@@ -75,7 +75,7 @@ const useGameStore = create(
       // --- NEW: CRITICAL FOR CLASSROOM USE ---
       resetGame: () =>
         set({
-          timeRemaining: 1320,
+          timeRemaining: 1800,
           timerActive: true,
           systems: { oxygen: false, power: false, nav: false, comms: false },
           currentView: 'hub',

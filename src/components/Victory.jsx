@@ -29,7 +29,7 @@ export default function Victory() {
   const resetGame = useGameStore((s) => s.resetGame)
   const integrity = useGameStore((s) => s.integrity)
 
-  const timeUsed = 1320 - timeRemaining
+  const timeUsed = 1800 - timeRemaining
   const firebaseConfigured = Boolean(db)
 
   const [teamName, setTeamName] = useState('')
